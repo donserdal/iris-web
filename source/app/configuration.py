@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-#
 #  IRIS Source Code
 #  Copyright (C) 2021 - Airbus CyberSecurity (SAS)
 #  ir@cyberactionlab.net
@@ -208,7 +206,8 @@ class AuthenticationType(Enum):
 authentication_type = os.environ.get('IRIS_AUTHENTICATION_TYPE',
                                      config.get('IRIS', 'AUTHENTICATION_TYPE', fallback="local"))
 
-authentication_create_user_if_not_exists = config.load('IRIS', 'AUTHENTICATION_CREATE_USER_IF_NOT_EXIST')
+authentication_create_user_if_not_exists = config.load('IRIS', 'AUTHENTICATION_CREATE_USER_IF_NOT_EXIST',
+                                                        fallback="False")
 
 tls_root_ca = os.environ.get('TLS_ROOT_CA',
                              config.get('IRIS', 'TLS_ROOT_CA', fallback=None))
@@ -265,10 +264,13 @@ class CeleryConfig:
 # --------- APP ---------
 class Config:
     # Handled by bumpversion
-    IRIS_VERSION = "v2.3.1"
+    IRIS_VERSION = "v2.4.19" # DO NOT EDIT THIS LINE MANUALLY
 
-    API_MIN_VERSION = "2.0.0"
-    API_MAX_VERSION = "2.0.3"
+    if os.environ.get('IRIS_DEMO_VERSION') is not None and os.environ.get('IRIS_DEMO_VERSION') != 'None':
+        IRIS_VERSION = os.environ.get('IRIS_DEMO_VERSION')
+
+    API_MIN_VERSION = "2.0.4"
+    API_MAX_VERSION = "2.0.5"
 
     MODULES_INTERFACE_MIN_VERSION = '1.1'
     MODULES_INTERFACE_MAX_VERSION = '1.2.0'
@@ -287,9 +289,10 @@ class Config:
         IRIS_ADM_USERNAME = config.load('IRIS', 'ADM_USERNAME')
         IRIS_ADM_API_KEY = config.load('IRIS', 'ADM_API_KEY')
 
-    PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
+    PERMANENT_SESSION_LIFETIME = timedelta(minutes=int(config.load('IRIS', 'SESSION_TIMEOUT', fallback=1440)))
     SESSION_COOKIE_SAMESITE = 'Lax'
     SESSION_COOKIE_SECURE = True
+    MFA_ENABLED = config.load('IRIS', 'MFA_ENABLED', fallback=False) == 'True'
 
     PG_ACCOUNT = PG_ACCOUNT_
     PG_PASSWD = PG_PASSWD_
@@ -459,7 +462,29 @@ class Config:
             LDAP_CUSTOM_TLS_CONFIG = config.load('LDAP', 'CUSTOM_TLS_CONFIG', fallback='True')
             LDAP_CUSTOM_TLS_CONFIG = (LDAP_CUSTOM_TLS_CONFIG == 'True')
 
+    elif authentication_type == 'oidc':
+        OIDC_ISSUER_URL = config.load('OIDC', 'ISSUER_URL')
+        OIDC_CLIENT_ID = config.load('OIDC', 'CLIENT_ID')
+        OIDC_CLIENT_SECRET = config.load('OIDC', 'CLIENT_SECRET')
+        OIDC_AUTH_ENDPOINT = config.load('OIDC', 'AUTH_ENDPOINT', fallback=None)
+        OIDC_TOKEN_ENDPOINT = config.load('OIDC', 'TOKEN_ENDPOINT', fallback=None)
+        OIDC_END_SESSION_ENDPOINT = config.load('OIDC', 'END_SESSION_ENDPOINT', fallback=None)
+        OIDC_SCOPES = config.load('OIDC', 'SCOPES', fallback="openid email profile")
+        OIDC_MAPPING_USERNAME = config.load('OIDC', 'MAPPING_USERNAME', fallback='preferred_username')
+        OIDC_MAPPING_EMAIL = config.load('OIDC', 'MAPPING_EMAIL', fallback='email')
+
     """ Caching 
     """
     CACHE_TYPE = "SimpleCache"
     CACHE_DEFAULT_TIMEOUT = 300
+
+    log.info(f'IRIS Server {IRIS_VERSION}')
+    log.info(f'Min. API version supported: {API_MIN_VERSION}')
+    log.info(f'Max. API version supported: {API_MAX_VERSION}')
+    log.info(f'Min. module interface version supported: {MODULES_INTERFACE_MIN_VERSION}')
+    log.info(f'Max. module interface version supported: {MODULES_INTERFACE_MAX_VERSION}')
+    log.info(f'Session lifetime: {PERMANENT_SESSION_LIFETIME}')
+    log.info(f'Authentication mechanism configured: {AUTHENTICATION_TYPE}')
+    log.info(f'Authentication local fallback {"enabled" if AUTHENTICATION_LOCAL_FALLBACK else "disabled"}')
+    log.info(f'MFA {"enabled" if MFA_ENABLED else "disabled"}')
+    log.info(f'Create user during authentication: {"enabled" if AUTHENTICATION_CREATE_USER_IF_NOT_EXIST else "disabled"}')

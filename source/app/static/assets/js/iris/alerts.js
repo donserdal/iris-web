@@ -1,4 +1,5 @@
 let sortOrder ;
+let editor = null;
 
 function objectToQueryString(obj) {
   return Object.keys(obj)
@@ -39,7 +40,7 @@ const selectsConfig = {
         name: 'customer_name'
     },
     alert_owner_id: {
-        url: '/manage/users/list',
+        url: '/manage/users/restricted/list',
         id: 'user_id',
         name: 'user_name'
     },
@@ -179,6 +180,9 @@ function mergeMultipleAlertsModal() {
                             type: 'GET',
                             dataType: 'json'
                         },
+                        minLength: 0,
+                        clearOnEmpty: false,
+                        emptyRequest: true,
                         locale: {
                             emptyTitle: 'Select and Begin Typing',
                             statusInitialized: '',
@@ -188,7 +192,7 @@ function mergeMultipleAlertsModal() {
                         },
                         preserveSelected: false
                     };
-                    get_request_api('/context/get-cases/100')
+                    get_request_api('/context/search-cases')
                         .done((data) => {
                             if (notify_auto_api(data, true)) {
                                 mergeAlertCasesSelectOption(data);
@@ -310,17 +314,20 @@ function mergeAlertModal(alert_id) {
                     type: 'GET',
                     dataType: 'json'
                 },
+                minLength: 0,
+                clearOnEmpty: false,
+                emptyRequest: true,
                 locale: {
                     emptyTitle: 'Select and Begin Typing',
                     statusInitialized: '',
                 },
                 preprocessData: function (data) {
-                    return context_data_parser(data);
+                    return context_data_parser(data, false);
                 },
                 preserveSelected: false
             };
 
-            get_request_api('/context/get-cases/100')
+            get_request_api('/context/search-cases')
             .done((data) => {
                 if (notify_auto_api(data, true)) {
                     mergeAlertCasesSelectOption(data);
@@ -444,12 +451,12 @@ function mergeAlertCasesSelectOption(data) {
 
 function fetchSmartRelations(alert_id) {
     $(`input[name="open_alerts_${alert_id}"]`).prop('checked', true);
-    $(`input[name="closed_alerts_${alert_id}"]`).prop('checked', false);
-    $(`input[name="open_cases_${alert_id}"]`).prop('checked', false);
-    $(`input[name="closed_cases_${alert_id}"]`).prop('checked', false);
+    $(`input[name="closed_alerts_${alert_id}"]`).prop('checked', true);
+    $(`input[name="open_cases_${alert_id}"]`).prop('checked', true);
+    $(`input[name="closed_cases_${alert_id}"]`).prop('checked', true);
 
-    fetchSimilarAlerts(alert_id, false, true, false,
-        false, false);
+    fetchSimilarAlerts(alert_id, false, true, true,
+        true, true);
 }
 
 function buildAlertLink(alert_id){
@@ -498,9 +505,9 @@ function createNetwork(alert_id, relatedAlerts, nb_nodes, containerId, container
     edges: new vis.DataSet(edges),
   };
 
-  const options = {
+const options = {
     edges: {
-      smooth: {
+        smooth: {
             enabled: true,
             type: 'continuous',
             roundness: 0.5
@@ -511,27 +518,34 @@ function createNetwork(alert_id, relatedAlerts, nb_nodes, containerId, container
         improvedLayout: true
     },
     interaction: {
-      hideEdgesOnDrag: false,
-        tooltipDelay: 100
+        hideEdgesOnDrag: false,
+        tooltipDelay: 100,
+        zoomView: false,
+        navigationButtons: true,
+        keyboard: {
+            enabled: true,
+            bindToWindow: true
+        }
     },
-    height: (window.innerHeight- 250) + "px",
+    height: (window.innerHeight - 400) + "px",
     clickToUse: true,
     physics: {
         forceAtlas2Based: {
-          gravitationalConstant: -167,
-          centralGravity: 0.04,
-          springLength: 0,
-          springConstant: 0.02,
-          damping: 0.9
+            gravitationalConstant: -167,
+            centralGravity: 0.02,
+            springLength: 0,
+            springConstant: 0.01,
+            damping: 0.1
         },
         minVelocity: 0.41,
         solver: "forceAtlas2Based",
         timestep: 0.45
     }
-  };
+};
 
-    const container = document.getElementById(containerId);
-    const network = new vis.Network(container, data, options);
+const container = document.getElementById(containerId);
+const network = new vis.Network(container, data, options);
+
 
     // Create a MutationObserver to listen for DOM changes in the container
     const observer = new MutationObserver((mutations) => {
@@ -586,7 +600,7 @@ function createNetwork(alert_id, relatedAlerts, nb_nodes, containerId, container
               $('#view-alert').data('node-id', node_id);
               $('#view-alert').data('node-type', node_type);
               if (node_type === 'alert' || node_type === 'case') {
-                  $('#view-alert-text').text(`View on ${node_type} #${node_id}`);
+                  $('#view-alert-text').text(`View ${node_type} #${node_id}`);
               } else {
                     $('#view-alert-text').text(`Pivot on ${node_type} ${node_id}`);
               }
@@ -798,20 +812,28 @@ function addTagFilter(this_object) {
 
 function getFiltersFromUrl() {
     const formData = new FormData($('#alertFilterForm')[0]);
-    return Object.fromEntries(formData.entries());
+    const filters = Object.fromEntries(formData.entries());
+
+    filters.custom_conditions = editor.getValue();
+
+    return filters;
 }
 
-function alertResolutionToARC(resolution) {
+function alertResolutionToARC(resolution, alert_id) {
     if (resolution === null) {
         return '';
     }
     switch (resolution.resolution_status_name) {
         case 'True Positive With Impact':
-            return `<span class="badge alert-bade-status badge-pill badge-danger mr-2">True Positive with impact</span>`
+            return `<span class="badge alert-bade-status badge-pill badge-danger mr-2" id="alertResolution-${alert_id}" data-value="true_positive_with_impact">True Positive with impact</span>`
         case 'True Positive Without Impact':
-            return `<span class="badge alert-bade-status badge-pill badge-warning mr-2">True Positive without impact</span>`
+            return `<span class="badge alert-bade-status badge-pill badge-warning mr-2" id="alertResolution-${alert_id}" data-value="true_positive_without_impact">True Positive without impact</span>`
         case 'False Positive':
-            return `<span class="badge alert-bade-status badge-pill badge-success mr-2">False Positive</span>`
+            return `<span class="badge alert-bade-status badge-pill badge-success mr-2" id="alertResolution-${alert_id}" data-value="false_positive">False Positive</span>`
+        case 'Legitimate':
+            return `<span class="badge alert-bade-status badge-pill badge-info mr-2" id="alertResolution-${alert_id}" data-value="legitimate">Legitimate</span>`
+        case 'Unknown':
+            return `<span class="badge alert-bade-status badge-pill badge-light mr-2" id="alertResolution-${alert_id}" data-value="unknown">Unknown resolution</span>`
     }
 }
 
@@ -831,7 +853,7 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                      modulesOptionsIocReq) {
   const colorSeverity = alert_severity_to_color(alert.severity.severity_name);
   const alert_color = alertStatusToColor(alert.status.status_name);
-  const alert_resolution = alertResolutionToARC(alert.resolution_status);
+  const alert_resolution = alertResolutionToARC(alert.resolution_status, alert.alert_id);
 
   if (alert.owner !== null) {
       alert.owner.user_name = filterXSS(alert.owner.user_name);
@@ -874,7 +896,7 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                             <div class="avatar-tickbox-wrapper">
                               <div class="avatar-wrapper">
                                 <div class="avatar cursor-pointer">
-                                  <span class="avatar-title alert-m-title alert-similarity-trigger rounded-circle bg-${colorSeverity}" data-toggle="collapse" data-target="#additionalDetails-${alert.alert_id}">
+                                  <span class="avatar-title alert-m-title alert-similarity-trigger rounded-circle bg-${colorSeverity}" data-toggle="collapse" data-target="#additionalDetails-${alert.alert_id}" >
                                     <i class="fa-solid fa-fire"></i>
                                   </span>
                                 </div>
@@ -887,7 +909,7 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                         </div>
                     </div>
                     <div class="col-9">
-                        <h6 class="text-uppercase fw-bold mb-1 mt-1 ml-3 alert-m-title alert-m-title-${colorSeverity}" data-toggle="collapse" data-target="#additionalDetails-${alert.alert_id}">
+                        <h6 class="text-uppercase fw-bold mb-1 mt-1 ml-3 alert-m-title alert-m-title-${colorSeverity}" data-toggle="collapse" data-target="#additionalDetails-${alert.alert_id}" onclick="fetchSmartRelations(${alert.alert_id});">
                             ${alert.alert_title}
                             <span class="text-${colorSeverity} pl-3"></span>
                             <div class="d-flex mb-3">
@@ -971,23 +993,41 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                       </div>` : ''}
                       ${alert.alert_source_link ? `<div class="row mt-2">
                         <div class="col-md-3"><b>Source Link:</b></div>
-                        <div class="col-md-9">${
+                        <div class="col-md-9 copy-value">${
                             alert.alert_source_link && alert.alert_source_link.startsWith('http') 
-                            ? `<a href="${alert.alert_source_link}">${alert.alert_source_link}</a>` 
+                            ? `<a href="${alert.alert_source_link}" target="_blank" rel="noopener noreferrer">${alert.alert_source_link}</a>
+                                <button class="copy-btn ml-2" data-value="${escapeHtml(alert.alert_source_link)}">
+                                    <i class="fa fa-copy text-dark"></i>
+                                </button>`
                             : 'No valid link provided'
                           }</div>
                       </div>` : ''}
                       ${alert.alert_source_ref ? `<div class="row mt-2">
                         <div class="col-md-3"><b>Source Reference:</b></div>
-                        <div class="col-md-9">${alert.alert_source_ref}</div>
+                        <div class="col-md-9 copy-value">
+                            ${alert.alert_source_ref}
+                            <button class="copy-btn ml-2" data-value="${escapeHtml(alert.alert_source_ref)}">
+                                    <i class="fa fa-copy text-dark"></i>
+                            </button>
+                        </div>
                       </div>` : ''}
                       ${alert.alert_source_event_time ? `<div class="row mt-2">
                         <div class="col-md-3"><b>Source Event Time:</b></div>
-                        <div class="col-md-9">${alert.alert_source_event_time}</div>
+                        <div class="col-md-9 copy-value">
+                            ${formatTime(alert.alert_source_event_time)} UTC
+                            <button class="copy-btn ml-2" data-value="${formatTime(alert.alert_source_event_time)}">
+                                    <i class="fa fa-copy text-dark"></i>
+                            </button>
+                        </div>
                       </div>` : ''}
                       ${alert.alert_creation_time ? `<div class="row mt-2">
                         <div class="col-md-3"><b>IRIS Creation Time:</b></div>
-                        <div class="col-md-9">${alert.alert_creation_time}</div>
+                        <div class="col-md-9 copy-value">
+                            ${formatTime(alert.alert_creation_time)} UTC
+                            <button class="copy-btn ml-2" data-value="${formatTime(alert.alert_creation_time)}">
+                                    <i class="fa fa-copy text-dark"></i>
+                            </button>
+                        </div>
                       </div>` : ''}
                     
                     <div class="separator-solid"></div>
@@ -1007,8 +1047,8 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                     <div class="separator-solid"></div>
                     <h3 class="title mt-3 mb-3"><strong>Relationships</strong></h3>
                     <button class="btn btn-sm btn-outline-dark" type="button" data-toggle="collapse" data-target="#relationsAlert-${alert.alert_id}" 
-                    aria-expanded="false" aria-controls="relationsAlert-${alert.alert_id}" onclick="fetchSmartRelations(${alert.alert_id});">Toggle Relations</button>
-                    <div class="collapse mt-3" id="relationsAlert-${alert.alert_id}">
+                    aria-expanded="true" aria-controls="relationsAlert-${alert.alert_id}" onclick="fetchSmartRelations(${alert.alert_id});" id="relationsAlertButton-${alert.alert_id}">Toggle Relations</button>
+                    <div class="collapse mt-3 show" id="relationsAlert-${alert.alert_id}">
                         The following relationships are automatically generated by IRIS based on the alert's IOCs and assets 
                         in the system. They are an indication only and may not be accurate. 
                         <div class="row ml-1">
@@ -1043,7 +1083,7 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                                     <div class="input-group-prepend">
                                         <span class="input-group-text">Lookback (days)</span>
                                     </div>
-                                    <input type="number" name="value" value="30" class="form-control" id="daysBackGraphFilter-${alert.alert_id}" onchange="refreshAlertRelationships(${alert.alert_id})">
+                                    <input type="number" name="value" value="180" class="form-control" id="daysBackGraphFilter-${alert.alert_id}" onchange="refreshAlertRelationships(${alert.alert_id})">
                                 </div>
                             </div>  
                         </div>
@@ -1077,11 +1117,16 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                               .map(
                                   (ioc) => `
                                                  <tr>
-                                                   <td>${filterXSS(ioc.ioc_value)}</td>
+                                                   <td class="copy-value">
+                                                        ${filterXSS(ioc.ioc_value)}
+                                                        <button class="copy-btn ml-2" data-value="${filterXSS(ioc.ioc_value)}">
+                                                            <i class="fa fa-copy text-dark"></i>
+                                                        </button>
+                                                   </td>
                                                    <td>${filterXSS(ioc.ioc_description)}</td>
                                                    <td>${ioc.ioc_type ? filterXSS(ioc.ioc_type.type_name) : '-'}</td>
                                                    <td>${filterXSS(ioc.ioc_tlp) ? ioc.ioc_tlp : '-'}</td>
-                                                   <td>${ioc.ioc_tags ? ioc.ioc_tags.split(',').map((tag) => `<span class="badge badge-pill badge-light ml-1"><i class="fa fa-tag mr-1"></i>${filterXSS(tag)}</span>`).join('') : ''}</td>
+                                                   <td>${ioc.ioc_tags ? ioc.ioc_tags.split(',').map((tag) => get_tag_from_data(tag, 'badge badge-pill badge-light ml-1')).join('') : ''}</td>
                                                    <td>${ioc.ioc_enrichment ? `<button type="button" class="btn btn-sm btn-outline-dark" data-toggle="modal" data-target="#enrichmentModal" onclick="showEnrichment(${JSON.stringify(ioc.ioc_enrichment).replace(/"/g, '&quot;')})">
                                                       View Enrichment
                                                     </button>` : ''}
@@ -1129,12 +1174,18 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                   .map(
                       (asset) => `
                                      <tr>
+                                       <td class="copy-value">
+                                            ${asset.asset_name ? filterXSS(asset.asset_name) : '-'}
+                                            <button class="copy-btn ml-2" data-value="${asset.asset_name ? filterXSS(asset.asset_name) : '-'}">
+                                                <i class="fa fa-copy text-dark"></i>
+                                            </button>
+                                       </td>
                                        <td>${asset.asset_name ? filterXSS(asset.asset_name) : '-'}</td>
                                        <td>${asset.asset_description ? filterXSS(asset.asset_description) : '-'}</td>
                                        <td>${asset.asset_type ? filterXSS(asset.asset_type.asset_name) : '-'}</td>
                                        <td>${asset.asset_domain ? filterXSS(asset.asset_domain) : '-'}</td>
                                        <td>${asset.asset_ip ? filterXSS(asset.asset_ip) : '-'}</td>
-                                       <td>${asset.asset_tags ? asset.asset_tags.split(',').map((tag) => `<span class="badge badge-pill badge-light ml-1"><i class="fa fa-tag mr-1"></i>${filterXSS(tag)}</span>`).join('') : ''}</td>
+                                       <td>${asset.asset_tags ? asset.asset_tags.split(',').map((tag) => get_tag_from_data(tag, 'badge badge-pill badge-light ml-1')).join('') : ''}</td>
                                        <td>${asset.asset_enrichment ? `<button type="button" class="btn btn-sm btn-outline-dark" data-toggle="modal" data-target="#enrichmentModal" onclick="showEnrichment(${JSON.stringify(asset.asset_enrichment).replace(/"/g, '&quot;')})">
                                           View Enrichment
                                         </button>` : ''}
@@ -1178,8 +1229,8 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
               <div class="">  
                 ${alert_resolution === undefined ? "": alert_resolution} 
                 ${alert.status ? `<span class="badge alert-bade-status badge-pill badge-light mr-3">${alert.status.status_name}</span>` : ''}                    
-                <span title="Alert source event time"><b><i class="fa-regular fa-calendar-check"></i></b>
-                <small class="text-muted ml-1">${alert.alert_source_event_time}</small></span>
+                <span title="Alert source event UTC time"><b><i class="fa-regular fa-calendar-check"></i></b>
+                <small class="text-muted ml-1">${formatTime(alert.alert_source_event_time)}</small></span>
                 <span title="Alert severity"><b class="ml-3"><i class="fa-solid fa-bolt"></i></b>
                   <small class="text-muted ml-1" id="alertSeverity-${alert.alert_id}" data-severity-id="${alert.severity.severity_id}">${alert.severity.severity_name}</small></span>
                 <span title="Alert source"><b class="ml-3"><i class="fa-solid fa-cloud-arrow-down"></i></b>
@@ -1295,11 +1346,17 @@ async function updateAlerts(page, per_page, filters = {}, paging=false){
       filters = getFiltersFromUrl();
   }
 
+  filters.custom_conditions = editor.getValue();
+
   const alertsContainer = $('.alerts-container');
   alertsContainer.html('<h4 class="ml-auto mr-auto">Retrieving alerts...</h4>');
 
   const filterString = objectToQueryString(filters);
-  const data = await fetchAlerts(page, per_page, filterString, sortOrder);
+  const data = await fetchAlerts(page, per_page, filterString, sortOrder).catch((error) => {
+        notify_error('Failed to fetch alerts');
+        alertsContainer.html('<h4 class="ml-auto mr-auto">Oops error loading the alerts - Check logs</h4>');
+        console.error(error);
+    });
 
   if (!notify_auto_api(data, true)) {
     return;
@@ -1400,6 +1457,11 @@ async function updateAlerts(page, per_page, filters = {}, paging=false){
   filterString || queryParams.get('filter_id') ? $('#resetFilters').show() : $('#resetFilters').hide();
 
   alertsContainer.show();
+
+  $('.copy-btn').off().on('click', function() {
+      let value = $(this).data('value');
+      copy_text_clipboard(value);
+  });
 }
 
 $('#alertsPerPage').on('change', (e) => {
@@ -1432,6 +1494,8 @@ function refreshAlerts(){
 
     const formData = new FormData($('#alertFilterForm')[0]);
     const filters = Object.fromEntries(formData.entries());
+
+    filters.custom_conditions = editor.getValue();
 
     updateAlerts(page_number, per_page, filters)
         .then(() => {
@@ -1495,6 +1559,7 @@ $('#resetFilters').on('click', function () {
         }
     });
 
+    editor.setValue("", 1);
     // Reset the saved filters dropdown
     resetSavedFilters(null);
 
@@ -1537,17 +1602,28 @@ function delete_alert(alert_id) {
         });
 }
 
+function getAlertResolutionName(alert_id) {
+    return $(`#alertResolution-${alert_id}`).data('value');
+}
+
 async function editAlert(alert_id, close=false) {
 
     const alertTag = $('#editAlertTags');
     const confirmAlertEdition = $('#confirmAlertEdition');
 
     alertTag.val($(`#alertTags-${alert_id}`).text())
-    alertTag.amsifySuggestags({
-     printValues: false,
-     suggestions: []
-    });
+    set_suggest_tags(`editAlertTags`);
     $('#editAlertNote').val($(`#alertNote-${alert_id}`).text());
+
+    let alert_resolution = getAlertResolutionName(alert_id);
+    if (alert_resolution === '') {
+        alert_resolution = 'Unknown';
+    }
+
+    // Uncheck all radio buttons
+    $(`input[type='radio'][name='resolutionStatus']`).prop('checked', false);
+
+    $(`input[type='radio'][name='resolutionStatus'][value='${alert_resolution}']`).prop('checked', true);
 
     if (close) {
         confirmAlertEdition.text('Close alert');
@@ -1571,21 +1647,22 @@ async function editAlert(alert_id, close=false) {
       console.error(error);
     });
 
-    $('#editAlertModal').modal('show');
+   $('#editAlertModal').modal('show');
 
     confirmAlertEdition.off('click').on('click', function () {
         let alert_note = $('#editAlertNote').val();
         let alert_tags = alertTag.val();
 
-        console.log(getAlertResolutionId($("input[type='radio'][name='resolutionStatus']:checked").val()));
-
         let data = {
           alert_note: alert_note,
           alert_tags: alert_tags,
           alert_resolution_status_id: getAlertResolutionId($("input[type='radio'][name='resolutionStatus']:checked").val()),
-          alert_classification_id: $('#editAlertClassification').val(),
-          alert_severity_id: $('#editAlertSeverity').val()
+          alert_severity_id: $('#editAlertSeverity').val(),
         };
+
+        let alert_classification_id = $('#editAlertClassification').val();
+        if (alert_classification_id)
+            data['alert_classification_id'] = alert_classification_id;
 
         if (close) {
             data['alert_status_id'] = getAlertStatusId('Closed');
@@ -1596,6 +1673,40 @@ async function editAlert(alert_id, close=false) {
                 $('#editAlertModal').modal('hide');
             });
     });
+}
+
+function closeBatchAlerts() {
+    const alertTag = $('#editAlertTags');
+    const confirmAlertEdition = $('#confirmAlertEdition');
+    $('#editAlertNote').val('');
+    alertTag.val('');
+
+    confirmAlertEdition.text('Close alerts');
+    $('.alert-edition-part').hide();
+    $('#closeAlertModalLabel').text(`Close multiple alerts`);
+
+    $('#editAlertModal').modal('show');
+
+    confirmAlertEdition.off('click').on('click', function () {
+        let alert_note = $('#editAlertNote').val();
+        let alert_tags = alertTag.val();
+
+        let data = {
+          alert_note: alert_note,
+          alert_tags: alert_tags,
+          alert_resolution_status_id: getAlertResolutionId($("input[type='radio'][name='resolutionStatus']:checked").val()),
+        };
+
+        if (close) {
+            data['alert_status_id'] = getAlertStatusId('Closed');
+        }
+
+        updateBatchAlerts(data)
+            .then(() => {
+                $('#editAlertModal').modal('hide');
+            });
+    });
+
 }
 
 async function fetchSavedFilters() {
@@ -1696,6 +1807,8 @@ $('#saveFilterButton').on('click', function () {
     const filterDescription = $('#filterDescription').val();
     const filterIsPrivate = $('#filterIsPrivate').prop('checked');
 
+    filterData.custom_conditions = editor.getValue();
+
     if (!filterName) return;
 
     const url = '/filters/add';
@@ -1727,7 +1840,7 @@ function changeStatusAlert(alert_id, status_name) {
 
 async function changeAlertOwner(alertId) {
   // Fetch the user list from the endpoint
-  const usersReq = await get_request_api('/manage/users/list');
+  const usersReq = await get_request_api('/manage/users/restricted/list');
 
   if (!notify_auto_api(usersReq, true)) { return; };
 
@@ -1769,7 +1882,7 @@ async function changeBatchAlertOwner(alertId) {
     }
 
       // Fetch the user list from the endpoint
-      const usersReq = await get_request_api('/manage/users/list');
+      const usersReq = await get_request_api('/manage/users/restricted/list');
 
       if (!notify_auto_api(usersReq, true)) { return; };
 
@@ -1829,6 +1942,12 @@ function setFormValuesFromUrl() {
 
   queryParams.forEach((value, key) => {
     const input = form.find(`[name="${key}"]`);
+   if (key === 'custom_conditions') {
+        // If there's a custom_conditions param, load it into the ACE editor
+        editor.setValue(value, 1); // 1 = move cursor to start
+        return;
+    }
+
     if (input.length > 0) {
       if (input.prop('type') === 'checkbox') {
         input.prop('checked', value in ['true', 'y', 'yes', '1', 'on']);
@@ -2012,6 +2131,75 @@ $(document).ready(function () {
             .catch(error => console.error(error));
         });
       }
+
+
+    editor = ace.edit('custom_conditions');
+    if ($("#custom_conditions").attr("data-theme") != "dark") {
+        editor.setTheme("ace/theme/tomorrow");
+    } else {
+        editor.setTheme("ace/theme/iris_night");
+    }
+    editor.session.setMode("ace/mode/json");
+    editor.renderer.setShowGutter(true);
+    editor.setOption("showLineNumbers", true);
+    editor.setOption("showPrintMargin", false);
+    editor.setOption("displayIndentGuides", true);
+    editor.setOption("maxLines", "Infinity");
+    editor.setOption("minLines", "2");
+    editor.setOption("autoScrollEditorIntoView", true);
+    editor.session.setUseWrapMode(true);
+    editor.setOption("indentedSoftWrap", false);
+    editor.renderer.setScrollMargin(8, 5)
+    editor.setOption("enableBasicAutocompletion", true);
+
+    editor.setOption("enableBasicAutocompletion", true);
+    editor.setOption("enableLiveAutocompletion", true);
+
+        // Use the langTools from ACE for autocompletion
+        let langTools = ace.require("ace/ext/language_tools");
+
+        // Define a custom completer
+        let customCompleter = {
+            getCompletions: function(editor, session, pos, prefix, callback) {
+                const completions = [
+                    { caption: '"field": "alert_title"', value: '"field": "alert_title"', meta: "field" },
+                    { caption: '"field": "alert_description"', value: '"field": "alert_description"', meta: "field" },
+                    { caption: '"field": "alert_source"', value: '"field": "alert_source"', meta: "field" },
+                    { caption: '"field": "alert_tags"', value: '"field": "alert_tags"', meta: "field" },
+                    { caption: '"field": "alert_status_id"', value: '"field": "alert_status_id"', meta: "field" },
+                    { caption: '"field": "alert_severity_id"', value: '"field": "alert_severity_id"', meta: "field" },
+                    { caption: '"field": "alert_classification_id"', value: '"field": "alert_classification_id"', meta: "field" },
+                    { caption: '"field": "alert_customer_id"', value: '"field": "alert_customer_id"', meta: "field" },
+                    { caption: '"field": "source_start_date"', value: '"field": "source_start_date"', meta: "field" },
+                    { caption: '"field": "source_end_date"', value: '"field": "source_end_date"', meta: "field" },
+                    { caption: '"field": "creation_start_date"', value: '"field": "creation_start_date"', meta: "field" },
+                    { caption: '"field": "creation_end_date"', value: '"field": "creation_end_date"', meta: "field" },
+                    { caption: '"field": "alert_assets"', value: '"field": "alert_assets"', meta: "field" },
+                    { caption: '"field": "alert_iocs"', value: '"field": "alert_iocs"', meta: "field" },
+                    { caption: '"field": "alert_ids"', value: '"field": "alert_ids"', meta: "field" },
+                    { caption: '"field": "source_reference"', value: '"field": "source_reference"', meta: "field" },
+                    { caption: '"field": "case_id"', value: '"field": "case_id"', meta: "field" },
+                    { caption: '"field": "alert_owner_id"', value: '"field": "alert_owner_id"', meta: "field" },
+                    { caption: '"field": "alert_resolution_id"', value: '"field": "alert_resolution_id"', meta: "field" },
+                    { caption: '"operator": "in"', value: '"operator": "in"', meta: "operator" },
+                    { caption: '"operator": "not_in"', value: '"operator": "not_in"', meta: "operator" },
+                    { caption: '"operator": "eq"', value: '"operator": "eq"', meta: "operator" },
+                    { caption: '"operator": "like"', value: '"operator": "like"', meta: "operator" },
+                    { caption: '"value": [1]', value: '"value": [1]', meta: "value" }
+                ];
+
+                // Filter the completions based on the current prefix if desired
+                let filtered = completions;
+                if (prefix) {
+                    filtered = completions.filter(item => item.caption.toLowerCase().includes(prefix.toLowerCase()));
+                }
+
+                callback(null, filtered);
+            }
+        };
+
+        // Add the custom completer to ACE
+        langTools.addCompleter(customCompleter);
 
     fetchSavedFilters()
         .then(() => {
