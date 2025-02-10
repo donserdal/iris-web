@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-#
 #  IRIS Source Code
 #  Copyright (C) 2021 - Airbus CyberSecurity (SAS)
 #  ir@cyberactionlab.net
@@ -18,38 +16,33 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-# IMPORTS ------------------------------------------------
-
-# VARS ---------------------------------------------------
-
 import os
-# CONTENT ------------------------------------------------
 import tempfile
+import base64
 
 from flask import Blueprint
-from flask import redirect
 from flask import request
 from flask import send_file
-from flask import url_for
-from flask_login import current_user
 
 from app.iris_engine.module_handler.module_handler import call_modules_hook
-from app.iris_engine.reporter.reporter import IrisMakeDocReport, IrisMakeMdReport
+from app.iris_engine.reporter.reporter import IrisMakeDocReport
+from app.iris_engine.reporter.reporter import IrisMakeMdReport
 from app.iris_engine.utils.tracker import track_activity
 from app.models import CaseTemplateReport
-from app.util import FileRemover, ac_api_requires
-from app.util import not_authenticated_redirection_url
+from app.util import FileRemover
+from app.util import ac_api_requires
+from app.util import ac_requires_case_identifier
 from app.util import response_error
+from app.datamgmt.case.case_db import get_case
 
-reports_blueprint = Blueprint('reports',
-                              __name__,
-                              template_folder='templates')
+reports_blueprint = Blueprint('reports', __name__, template_folder='templates')
 
 file_remover = FileRemover()
 
 
 @reports_blueprint.route('/case/report/generate-activities/<int:report_id>', methods=['GET'])
 @ac_api_requires()
+@ac_requires_case_identifier()
 def download_case_activity(report_id, caseid):
 
     call_modules_hook('on_preload_activities_report_create', data=report_id, caseid=caseid)
@@ -95,6 +88,7 @@ def download_case_activity(report_id, caseid):
 
 @reports_blueprint.route("/case/report/generate-investigation/<int:report_id>", methods=['GET'])
 @ac_api_requires()
+@ac_requires_case_identifier()
 def _gen_report(report_id, caseid):
 
     safe_mode = False
@@ -124,8 +118,21 @@ def _gen_report(report_id, caseid):
             if fpath is None:
                 track_activity("failed to generate the report")
                 return response_error(msg="Failed to generate the report", data=logs)
+            
+            with open(fpath,'rb') as rfile:
+                encoded_file = base64.b64encode(rfile.read()).decode('utf-8')
 
-            call_modules_hook('on_postload_report_create', data=fpath, caseid=caseid)
+            res = get_case(caseid)
+            
+            _data = {
+                'report_id':report_id,
+                'file_path':fpath,
+                'case_id':res.case_id,
+                'user_name':res.user.name,
+                'file':encoded_file
+            }
+
+            call_modules_hook('on_postload_report_create', data=_data, caseid=caseid)
 
             resp = send_file(fpath, as_attachment=True)
             file_remover.cleanup_once_done(resp, tmp_dir)
@@ -135,4 +142,3 @@ def _gen_report(report_id, caseid):
             return resp
 
     return response_error("Unknown report", status=404)
-

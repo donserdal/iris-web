@@ -120,7 +120,7 @@ function add_assets() {
 function get_case_assets() {
     show_loader();
 
-    get_request_api('/case/assets/list')
+    get_request_api('/case/assets/filter')
     .done(function (response) {
         if (response.status == 'success') {
             if (response.data != null) {
@@ -133,13 +133,29 @@ function get_case_assets() {
                 Table.clear();
                 Table.rows.add(jsdata.assets);
                 Table.columns.adjust().draw();
-                load_menu_mod_options('asset', Table, delete_asset);
-
+                load_menu_mod_options('asset', Table, delete_asset, [{
+                    type: 'option',
+                    title: 'Check Alerts',
+                    multi: false,
+                    iconClass: 'fas fa-bell',
+                    action: function(rows) {
+                        let row = rows[0];
+                        let asset = get_row_value(row);
+                        window.open(`/alerts?alert_assets=${asset}`, '_blank');
+                    }
+                }]);
+                $('[data-toggle="popover"]').popover();
                 set_last_state(jsdata.state);
                 hide_loader();
                 Table.responsive.recalc();
 
-                $('[data-toggle="popover"]').popover({html: true, container: 'body'});
+                $(document)
+                    .off('click', '.asset_details_link')
+                    .on('click', '.asset_details_link', function(event) {
+                    event.preventDefault();
+                    let asset_id = $(this).data('asset_id');
+                    asset_details(asset_id);
+                });
 
             } else {
                 Table.clear().draw();
@@ -348,59 +364,80 @@ $(document).ready(function(){
             "data": "asset_name",
             "className": "dt-nowrap",
             "render": function (data, type, row, meta) {
-              if (type === 'display' || type === 'filter' || type === 'sort' || type === 'export') {
-                if (row['asset_domain']) {
-                    datak = sanitizeHTML(row['asset_domain'])+"\\"+ sanitizeHTML(data);
-                } else {
-                    datak = sanitizeHTML(data);
-                }
+                  if (type === 'display' || type === 'filter' || type === 'sort' || type === 'export') {
 
-                if (data.length > 60) {
-                    datak = data.slice(0, 60) + " (..)";
-                }
-                if (isWhiteSpace(data)) {
-                    datak = '#' + row['asset_id'];
-                }
-                share_link = buildShareLink(row['asset_id']);
-                if (row['asset_compromise_status_id'] == 1) {
-                    src_icon = row['asset_icon_compromised'];
-                } else {
-                    src_icon = row['asset_icon_not_compromised'];
-                }
-                ret = '<img class="mr-2" title="'+ sanitizeHTML(row['asset_type']) +'" style="width:1.5em;height:1.5em" src=\'/static/assets/img/graph/' + src_icon +
-                '\'> <a href="' + share_link + '" data-selector="true" title="Asset ID #'+ row['asset_id'] +
-                '" onclick="asset_details(\'' + row['asset_id'] + '\');return false;">' + datak +'</a>';
+                    // Create container element
+                    const container = document.createElement('div');
 
-                if (row.link.length > 0) {
-                    var has_compro = false;
-                    var datacontent = 'data-content="';
-                    for (idx in row.link) {
-                        if (row.link[idx]['asset_compromise_status_id'] == 1) {
-                            has_compro = true;
-                            datacontent += `<b><a target='_blank' rel='noopener' href='/case/assets?cid=${row.link[idx]['case_id']}&shared=${row.link[idx]['asset_id']}'>Observed <sup><i class='fa-solid fa-arrow-up-right-from-square ml-1 mr-1 text-muted'></i></sup></a></b> as <b class='text-danger'>compromised</b><br/> on <b><a href='/case?cid=${row.link[idx]['case_id']}'>case #${row.link[idx]['case_id']} <sup><i class='fa-solid fa-arrow-up-right-from-square ml-1 mr-1 text-muted'></i></sup></a></a></b> (${row.link[idx]['case_open_date'].replace('00:00:00 GMT', '')}) for the same customer.<br/><br/>`;
-                        } else {
-
-                            datacontent += `<b><a target='_blank' rel='noopener' href='/case/assets?cid=${row.link[idx]['case_id']}&shared=${row.link[idx]['asset_id']}'>Observed <sup><i class='fa-solid fa-arrow-up-right-from-square ml-1 mr-1 text-muted'></i></sup></a></b> as <b class='text-success'>not compromised</b><br/> on <b><a href='/case?cid=${row.link[idx]['case_id']}'>case #${row.link[idx]['case_id']} <sup><i class='fa-solid fa-arrow-up-right-from-square ml-1 mr-1 text-muted'></i></sup></a></a></b> (${row.link[idx]['case_open_date'].replace('00:00:00 GMT', '')}) for the same customer.<br/><br/>`;
-                        }
-                    }
-                    if (has_compro) {
-                       ret += `<a tabindex="0" class="fas fa-meteor ml-2 text-danger" style="cursor: pointer;" data-html="true"
-                            data-toggle="popover" data-trigger="focus" title="Observed in previous case" `;
+                    let datak = "";
+                    if (row['asset_domain']) {
+                        datak = row['asset_domain'] + "\\" + data;
                     } else {
-                        ret += `<a tabindex="0" class="fas fa-info-circle ml-2 text-success" style="cursor: pointer;" data-html="true"
-                        data-toggle="popover" data-trigger="focus" title="Observed in previous case" `;
+                        datak = data;
+                    }
+                    if (data.length > 60) {
+                        datak = data.slice(0, 60) + " (..)";
+                    }
+                    if (isWhiteSpace(data)) {
+                        datak = '#' + row['asset_id'];
                     }
 
-                    ret += datacontent;
-                    ret += '"></i>';
+                    let compro = "";
+
+                    if (row.link.length > 0) {
+                        let has_compro = false;
+                        let datacontent = 'data-content="';
+
+                        row.link.forEach(link => {
+                            const caseInfo = `<b><a target='_blank' rel='noopener' href='/case/assets?cid=${link.case_id}&shared=${link.asset_id}'>Observed <sup><i class='fa-solid fa-arrow-up-right-from-square ml-1 mr-1 text-muted'></i></sup></a></b>`;
+                            const caseLink = `<b><a href='/case?cid=${link.case_id}'>case #${link.case_id} <sup><i class='fa-solid fa-arrow-up-right-from-square ml-1 mr-1 text-muted'></i></sup></a></b>`;
+                            const date = link.case_open_date.replace('00:00:00 GMT', '');
+
+                            if (link.asset_compromise_status_id === 1) {
+                                has_compro = true;
+                                datacontent += `${caseInfo} as <b class='text-danger'>compromised</b><br/> on ${caseLink} (${date}) for the same customer.<br/><br/>`;
+                            } else {
+                                datacontent += `${caseInfo} as <b class='text-success'>not compromised</b><br/> on ${caseLink} (${date}) for the same customer.<br/><br/>`;
+                            }
+                        });
+
+                        compro += `<i tabindex="0" class="fas ${has_compro ? 'fa-meteor text-danger' : 'fa-info-circle text-success'} ml-2" style="cursor: pointer;" data-html="true" data-toggle="popover" data-trigger="focus" title="Observed in previous case" ${datacontent}"></i>`;
+                    }
+
+                    if (row.alerts.length > 0) {
+                        let alerts_content = "";
+
+                        row.alerts.forEach(alert => {
+                            alerts_content += `<i tabindex="0" class="fas fa-bell text-warning mr-2"></i><a href=\"/alerts?alert_ids=${alert.alert_id}&page=1&per_page=1&sort=desc\" target="_blank" rel="noopener">#${alert.alert_id} - ${alert.alert_title.replace(/'/g, "&#39;").replace(/"/g, "&quot;")}</a><br/>`;
+                        }  );
+                        alerts_content += `<i tabindex="0" class="fas fa-external-link-square mr-2"></i><a href=\"/alerts?alert_assets=${data}" target="_blank" rel="noopener">More..</a>`;
+
+
+                        compro += `<i tabindex="0" class="fas fa-bell text-warning ml-2" style="cursor: pointer;" data-html="true" data-toggle="popover" data-trigger="focus" title="Alerts" data-content='${alerts_content}'></i>`;
+                    }
+
+                    let img = $('<img>')
+                        .addClass('mr-2')
+                        .css({width: '1.5em', height: '1.5em'})
+                        .attr('src', '/static/assets/img/graph/' + (row['asset_compromise_status_id'] == 1 ? row['asset_type']['asset_icon_compromised'] : row['asset_type']['asset_icon_not_compromised']))
+                        .attr('title', row['asset_type']['asset_name']);
+
+                    let link = $('<a>')
+                        .attr('href', 'javascript:void(0);')
+                        .attr('data-asset_id', row['asset_id'])
+                        .attr('title', 'Asset ID #' + row['asset_id'])
+                        .addClass('asset_details_link')
+                        .text(datak);
+
+                    let con = $('<div>').append(img, link);
+
+                    return con.html() + compro;
                 }
-                return ret;
-              }
-              return data;
+                return data;
             }
           },
           {
-            "data": "asset_type",
+            "data": "asset_type.asset_name",
              "render": function (data, type, row, meta) {
                 if (type === 'display') { data = sanitizeHTML(data);}
                 return data;
@@ -409,22 +446,16 @@ $(document).ready(function(){
           { "data": "asset_description",
            "render": function (data, type, row, meta) {
               if (type === 'display' && data != null) {
-                data = sanitizeHTML(data);
-                datas = '<span data-toggle="popover-click-close" style="cursor: pointer;" title="Info" data-trigger="hover" href="#" data-content="' + data + '">' + data.slice(0, 70);
-
-                if (data.length > 70) {
-                    datas += ' (..)</span>';
-                } else {
-                    datas += '</span>';
-                }
-                return datas;
+                  return ret_obj_dt_description(data);
               }
               return data;
             }
           },
           { "data": "asset_ip",
              "render": function (data, type, row, meta) {
-                if (type === 'display') { data = sanitizeHTML(data);}
+                if (type === 'display'  && data != null) {
+                    return ret_obj_dt_description(data);
+                }
                 return data;
               }
           },
@@ -441,9 +472,9 @@ $(document).ready(function(){
             "data": "ioc_links",
             "render": function (data, type, row, meta) {
                 if ((type === 'filter' || type === 'display') && data != null) {
-                    datas = "";
+                    let datas = "";
                     for (ds in data) {
-                        datas += '<span class="badge badge-light">' + sanitizeHTML(data[ds]['ioc_value']) + '</span>';
+                        datas += get_ioc_tag_from_data(data[ds]['ioc_value'], 'badge badge-light ml-2');
                     }
                     return datas;
                 } else if (type === 'export' && data != null) {
@@ -456,10 +487,10 @@ $(document).ready(function(){
           { "data": "asset_tags",
             "render": function (data, type, row, meta) {
               if (type === 'display' && data != null  ) {
-                  tags = "";
-                  de = data.split(',');
-                  for (tag in de) {
-                    tags += '<span class="badge badge-light ml-2">' + sanitizeHTML(de[tag]) + '</span>';
+                  let tags = "";
+                  let de = data.split(',');
+                  for (let tag in de) {
+                      tags += get_tag_from_data(de[tag], 'badge badge-light ml-2');
                   }
                   return tags;
               }
@@ -470,7 +501,7 @@ $(document).ready(function(){
             "data": "analysis_status",
             "render": function(data, type, row, meta) {
                if (type === 'display') {
-                data = sanitizeHTML(data);
+                data = sanitizeHTML(data['name']);
                 if (data == 'To be done') {
                     flag = 'danger';
                 } else if (data == 'Started') {

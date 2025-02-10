@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-#
 #  IRIS Source Code
 #  Copyright (C) 2021 - Airbus CyberSecurity (SAS)
 #  ir@cyberactionlab.net
@@ -36,6 +34,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.flask_dropzone import Dropzone
 from app.iris_engine.tasker.celery import make_celery
+from app.iris_engine.access_control.oidc_handler import get_oidc_client
 
 
 class ReverseProxied(object):
@@ -72,7 +71,8 @@ def ac_current_user_has_permission(*permissions):
     """
     for permission in permissions:
 
-        if session['permissions'] & permission.value == permission.value:
+        if ('permissions' in session and
+                session['permissions'] & permission.value == permission.value):
             return True
 
     return False
@@ -91,13 +91,16 @@ app.jinja_env.filters['tojsonindent'] = lambda u: json.dumps(u, indent=4)
 app.jinja_env.filters['escape_dots'] = lambda u: u.replace('.', '[.]')
 app.jinja_env.globals.update(user_has_perm=ac_current_user_has_permission)
 app.jinja_env.globals.update(user_has_manage_perms=ac_current_user_has_manage_perms)
+app.jinja_options["autoescape"] = lambda _: True
+app.jinja_env.autoescape = True
 
 app.config.from_object('app.configuration.Config')
 
 cache = Cache(app)
 
 SQLALCHEMY_ENGINE_OPTIONS = {
-    "json_deserializer": partial(json.loads, object_pairs_hook=collections.OrderedDict)
+    "json_deserializer": partial(json.loads, object_pairs_hook=collections.OrderedDict),
+    "pool_pre_ping": True
 }
 
 db = SQLAlchemy(app, engine_options=SQLALCHEMY_ENGINE_OPTIONS)  # flask-sqlalchemy
@@ -126,11 +129,13 @@ socket_io = SocketIO(app, cors_allowed_origins="*")
 alerts_namespace = AlertsNamespace('/alerts')
 socket_io.on_namespace(alerts_namespace)
 
+oidc_client = None
+if app.config.get('AUTHENTICATION_TYPE') == "oidc":
+    oidc_client = get_oidc_client(app)
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db.session.remove()
 
+
 from app import views
-
-
